@@ -1,0 +1,93 @@
+# Definir la función parse_sounding
+def parse_sounding(input_txt, output_txt, output_csv):
+    with open(input_txt, 'r') as f:
+        lines = f.readlines()
+
+    # Encontrar la sección de los datos atmosféricos
+    data_started = False
+    data_lines = []
+
+    for line in lines:
+        if line.strip() == "-----------------------------------------------------------------------------":
+            data_started = True
+        elif data_started:
+            if line.strip() == "":
+                break  # Terminó la sección de datos
+            else:
+                data_lines.append(line.strip())
+
+    # Procesar los datos de cada línea
+    processed_data = []
+    for line in data_lines:
+        parts = line.split()
+        
+        try:
+            # Extraer los valores (presión, altura, temperatura, punto de rocío, humedad relativa, dirección y velocidad)
+            PRES_hPa = float(parts[0])  # presión en hectopascales
+            HGHT = float(parts[1])  # altura (no se necesita conversión)
+            TEMP_C = float(parts[2])  # temperatura en grados Celsius
+            DWPT_C = float(parts[3])  # punto de rocío en grados Celsius
+            RELH = int(parts[4])  # humedad relativa
+            DRCT = float(parts[6]) if len(parts) > 5 else -888888.00000  # dirección del viento (si está disponible)
+            SKNT = float(parts[7]) if len(parts) > 6 else -888888.00000  # velocidad del viento (si está disponible)
+
+            # Convertir la presión de hPa a Pa (multiplicamos por 100)
+            PRES = PRES_hPa * 100
+
+            # Convertir temperaturas de Celsius a Kelvin y nudos a metros/segundo
+            TEMP_K = TEMP_C + 273.15
+            DWPT_K = DWPT_C + 273.15
+            SKNT_MS = SKNT * 0.5144
+
+            # Los valores no conocidos se reemplazan por -888888.00000
+            W_U = -888888.00000
+            W_V = -888888.00000
+            THICK = -888888.00000
+
+            # Formatear la línea para Little_R
+            formatted_line = [
+                f"{PRES:13.5f}",
+                "     0",
+                f"{HGHT:12.5f}",
+                "     0",
+                f"{TEMP_K:12.5f}",
+                "     0",
+                f"{DWPT_K:12.5f}",
+                "     0",
+                f"{SKNT_MS:12.5f}",
+                "     0",
+                f"{DRCT:12.5f}",
+                "     0",
+                f"{W_U:12.5f}", #VIENTO U
+                "     0",
+                f"{W_V:12.5f}", #VIENTO V
+                "     0",
+                f"{RELH:12.5f}", 
+                "     0",
+                f"{THICK:12.5f}", #THICKNESS
+                "     0",
+            ]
+            processed_data.append(formatted_line)
+        except ValueError:
+            continue  # Si la línea no tiene suficientes datos, se omite
+
+    # Guardar los datos procesados en el archivo de texto
+    with open(output_txt, 'w') as f:
+        for line in processed_data:
+            f.write(' '.join(line) + '\n')
+'''
+    # Guardar los datos procesados en un archivo CSV
+    with open(output_csv, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "PRES", "HGHT", "MIXR Flag", "TEMP", "TEMP Flag", "DWPT", "DWPT Flag",
+            "RELH", "MIXR2", "DRCT", "SKNT", "THTA", "THTE", "THTV"
+        ])
+        writer.writerows(processed_data)
+'''
+
+# Uso de la función para procesar el archivo
+output_txt = '/content/drive/My Drive/Colab Notebooks/sounding_output.txt'
+output_csv = '/content/drive/My Drive/Colab Notebooks/sounding_output.csv'
+parse_sounding(file_path, output_txt, output_csv)'''
+
