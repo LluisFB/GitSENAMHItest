@@ -1,8 +1,223 @@
-Artic Monkeys
-Grupo5
-HombresG
+import py3grads
+import re
+import rasterio
+import numpy as np
+import xarray as xr
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+from matplotlib.colors import Normalize
+import geopandas as gpd
+import pandas as pd
+import warnings
+from glob import glob as gb
+from shapely.geometry import shape, Point
+from cartopy.mpl.gridliner import Gridliner
+from cartopy.io.shapereader import Reader
+from scipy import stats
+from matplotlib.gridspec import GridSpec
+from matplotlib.colors import BoundaryNorm, ListedColormap
+import sys
+import tempfile
+import subprocess
+from matplotlib import gridspec
+from IPython.display import HTML, display
+from datetime import datetime, timedelta
 
-The Office
-How I met your mother
-Arcane
+#################################################################################################
+#Función para crear un dataset de una variable que se lee con py3grads
+def create_dataset(var, xlats, xlons, xga, xlast1, xname):
+    # Obtener la información de tiempo desde py3grads
+    info_t1 = xga('set t 1')
+    time1 = info_t1[0][0]
+    # Extraer la fecha y hora de la cadena
+    time1_s = re.search(r'\d{4}:\d{1,2}:\d{1,2}:\d{1,2}', time1)
+    if time1_s:
+        time_string = time1_s.group()
+        start_date = pd.to_datetime(time_string, format='%Y:%m:%d:%H')
+    else:
+        raise ValueError("No se encontró una coincidencia en la cadena de tiempo.")    
+    # Crear el rango de fechas
+    s_date = pd.Timestamp(start_date)
+    time_delta = pd.Timedelta(hours=3)
+    num_time_steps = xlast1
+    time_array = pd.date_range(start=s_date, periods=num_time_steps, freq=time_delta)
+    
+    # Crear el Dataset con xarray
+    dataset = xr.Dataset(
+        {
+            xname: (["lat", "lon", "time"], var)  # La variable de datos con nombre xname
+        },
+        coords={
+            "lat": xlats,
+            "lon": xlons,
+            "time": time_array
+        }
+    )
+    
+    return dataset
+###################################################################################################
 
+#hh="%s"%sys.argv[1]
+#ymdx="%s"%sys.argv[2]
+hh='00'
+ymdx='20180921'
+#
+
+# Inicializar la instancia de GrADS
+ga = py3grads.Grads(verbose=False)
+# Abrir el archivo .ctl que corresponde al archivo GRIB2
+ctl_file = '/home/wrf/WRF43/WRF/LM1k/postprd/GRIB2/'+ymdx+hh+'/WRF1km.ctl'
+ctl_file = '/scratch/DMA/SMN/TIEMPO/data/regional/PERU_WRF22/2018/201809/2018092100/WRFPRS_d01.ctl'
+
+ga('open ' + ctl_file)
+# Ejecutar el comando 'q file' para listar las variables disponibles
+file_info = ga('q file')
+elementos = file_info[0]
+#
+#Extraer variables
+lons=ga.exp('lon') ; lons=lons[1,:] ; lons = lons - 360
+lats=ga.exp('lat') ; lats=lats[:,1]
+ga('set t 1 28')
+tmp = ga.exp('tmp2m')
+pr = ga.exp('apcpsfc')
+low_cloud = ga.exp('lcdclcl')
+mid_cloud = ga.exp('mcdcmcl')
+high_cloud = ga.exp('hcdchcl')
+#
+
+#hh="%s"%sys.argv[1]
+#ymdx="%s"%sys.argv[2]
+hh='00'
+ymdx='20180921'
+#
+
+# Inicializar la instancia de GrADS
+ga = py3grads.Grads(verbose=False)
+# Abrir el archivo .ctl que corresponde al archivo GRIB2
+ctl_file = '/home/wrf/WRF43/WRF/LM1k/postprd/GRIB2/'+ymdx+hh+'/WRF1km.ctl'
+ctl_file = '/scratch/DMA/SMN/TIEMPO/data/regional/PERU_WRF22/2018/201809/2018092100/WRFPRS_d01.ctl'
+
+ga('open ' + ctl_file)
+# Ejecutar el comando 'q file' para listar las variables disponibles
+file_info = ga('q file')
+elementos = file_info[0]
+#
+#Extraer variables
+lons=ga.exp('lon') ; lons=lons[1,:] ; lons = lons - 360
+lats=ga.exp('lat') ; lats=lats[:,1]
+ga('set t 1 28')
+tmp = ga.exp('tmp2m')
+pr = ga.exp('apcpsfc')
+low_cloud = ga.exp('lcdclcl')
+mid_cloud = ga.exp('mcdcmcl')
+high_cloud = ga.exp('hcdchcl')
+#
+
+estaciones = {
+    "Lima Oeste": {"lon": -77.126, "lat": -12.065},
+    "Lima Este": {"lon": -76.959, "lat": -12.0389},
+    #"Callao": {"lon": -77.133333, "lat": -12.05},
+    "Chosica": {"lon": -76.6989, "lat": -11.939},   
+    #"Barranca": {"lon": -77.8139, "lat": -10.682},
+    #"Cajatambo": {"lon": -77.275, "lat": -10.4625},
+    "Canta": {"lon": -76.623, "lat": -11.4678},
+    #"Cañete": {"lon": -76.401, "lat": -13.0839},
+    "Huaral": {"lon": -77.216669, "lat": -11.5},
+    "Huarochirí": {"lon": -76.231, "lat": -12.138},
+    "Huarochirí2": {"lon": -76.386, "lat": -11.845},
+    #"Huaura": {"lon": -77.611, "lat": -11.112},
+    #"Oyón": {"lon": -76.772, "lat": -10.6679},
+    #"Yauyos": {"lon": -75.917, "lat": -12.459}
+}
+
+latitudes = dataset_tmp2m['lat'].values  
+longitudes = dataset_tmp2m['lon'].values
+
+df = pd.DataFrame()
+
+for station, coords in estaciones.items():
+    target_lon = coords["lon"]
+    target_lat = coords["lat"]
+
+    lat_grid, lon_grid = np.meshgrid(latitudes, longitudes, indexing='ij')
+    
+    # Calcular la distancia euclidiana para cada punto del grid
+    distances = np.sqrt((lat_grid - target_lat)**2 + (lon_grid - target_lon)**2)
+    
+    # Obtener los índices del punto más cercano
+    min_index = np.unravel_index(np.argmin(distances), distances.shape)   
+    print(f"Estación: {station} - Longitud: {target_lon}, Latitud: {target_lat}" , f"Longitud wrf: {lon_grid[min_index]}", f"Latitud wrf: {lat_grid[min_index]}")
+
+
+    temperaturas = temp2m0[min_index[0], min_index[1], :].values - 273.15
+
+    # Extraer las fechas correspondientes
+    dates = temp2m0.time.values
+
+    # Crear un DataFrame temporal para la estación actual
+    station_df = pd.DataFrame(data=temperaturas, index=dates, columns=[station])
+
+    # Unir el DataFrame de la estación con el DataFrame principal
+    df = pd.concat([df, station_df], axis=1)
+
+    df_max = df.resample('D').max()
+    df_min = df.resample('D').min()
+
+df2 = pd.DataFrame()
+
+
+for station, coords in estaciones.items():
+    target_lon = coords["lon"]
+    target_lat = coords["lat"]
+
+    lat_grid, lon_grid = np.meshgrid(latitudes, longitudes, indexing='ij')
+    
+    # Calcular la distancia euclidiana para cada punto del grid
+    distances = np.sqrt((lat_grid - target_lat)**2 + (lon_grid - target_lon)**2)
+    
+    # Obtener los índices del punto más cercano
+    min_index = np.unravel_index(np.argmin(distances), distances.shape)   
+    print(f"Estación: {station} - Longitud: {target_lon}, Latitud: {target_lat}" , f"Longitud wrf: {lon_grid[min_index]}", f"Latitud wrf: {lat_grid[min_index]}")
+
+
+    nubosidad = (nubes_altas[min_index[0], min_index[1], :].values*0.5 + nubes_medias[min_index[0], min_index[1], :].values*0.3
+    + nubes_bajas[min_index[0], min_index[1], :].values*0.2)/1
+    
+    nubosidad = np.maximum.reduce([
+    nubes_altas[min_index[0], min_index[1], :].values,
+    nubes_medias[min_index[0], min_index[1], :].values,
+    nubes_bajas[min_index[0], min_index[1], :].values
+])
+    # Extraer las fechas correspondientes
+    dates = temp2m0.time.values - pd.Timedelta(hours=5)
+ 
+    # Crear un DataFrame temporal para la estación actual
+    station_df_nubes = pd.DataFrame(data=nubosidad, index=dates, columns=[station])
+
+    # Unir el DataFrame de la estación con el DataFrame principal
+    df2 = pd.concat([df2, station_df_nubes], axis=1)
+
+# Función para asignar imagen según el porcentaje de nubosidad
+def asignar_icono(nubosidad):
+    if nubosidad <= 25:
+        return '<img src="completamente_despejado.png" width="30"/>'
+    elif nubosidad <= 45:
+        return '<img src="despejado.png" width="30"/>'
+    elif nubosidad <= 75:
+        return '<img src="parcialmente_cubierto.png" width="30"/>'
+    else:
+        return '<img src="cielo_cubierto.png" width="30"/>'
+
+
+df_filtered = df2.between_time('07:00', '18:00')
+
+# Calcular el promedio diario en el rango de horas especificado
+df_daily_avg = df_filtered.resample('D').mean()
+
+for station, coords in estaciones.items():    
+    df_filtered[station] = df_filtered[station].apply(asignar_icono)
+
+# Mostrar la tabla con iconos en Jupyter Notebook
+display(HTML(df_filtered.to_html(escape=False)))
